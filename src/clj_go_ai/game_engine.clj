@@ -1,5 +1,6 @@
 (ns clj-go-ai.game-engine
-  (:require [clojure.set :as c-set]))
+  (:require [clojure.set :as c-set]
+            [clj-go-ai.ui.core :refer [keyword->color]]))
 
 (defn init-state "The initial state of the game" [komi]
   {:player :black :black-groups #{} :white-groups #{}
@@ -88,19 +89,21 @@
   ([state] (loop [x 0 y 0 st {:black #{} :white #{} :empty #{}}]
              (cond (or (= 19 x) 
                        (= (* 19 19) (apply + (map count (vals st))))) st
-                   (= 19 y) (let [[_ sp] (into-territories state [(inc x) 0] st)]
+                   (= 19 y) (let [[_ sp _] (into-territories state [(inc x) 0] st #{})]
                               (recur (inc x) 0 sp))
-                   :else (let [[_ sp] (into-territories state [x (inc y)] st)]
+                   :else (let [[_ sp _] (into-territories state [x (inc y)] st #{})]
                            (recur x (inc y) sp)))))
-  ([state curr-pt split]
+  ([state curr-pt split cells-to-avoid]
     (let [in-split (filter #(contains? (second %) curr-pt))
           [color group] (which-group-and-color state curr-pt)]
       (cond (not (empty? in-split)) [(ffirst in-split) split]
             (not= :empty color) [color (assoc split color (c-set/union group (color split)))]
-            :else (let [[f-c f-d] (reduce (fn [[cols sp-i] neigh] 
-                                            (let [[n-c n-d] (into-territories neigh sp-i)]
-                                              [(conj n-c cols) n-d]))
-                                          [#{} split]
+            :else (let [[f-c f-d] (reduce (fn [[cols sp-i av] neigh]
+                                            (if (contains? cells-to-avoid neigh)
+                                              [cols sp-i av]
+                                              (let [[n-c n-d n-av] (into-territories neigh sp-i)]
+                                                [(conj n-c cols) n-d n-av])))
+                                          [#{} split (conj cells-to-avoid curr-pt)]
                                           (neighbors curr-pt))]
                     (if (< 1 (count f-c))
                       [:empty (assoc f-d :empty (conj (:empty f-d) curr-pt))]
@@ -134,4 +137,6 @@
                           :is-end-game is-end-game}
                          {:white-getter (fn [state] (mapcat identity (groups-of state :white)))
                           :black-getter (fn [state] (mapcat identity (groups-of state :black)))
-                          :last-getter (fn [state] [(:last-move state)])}])
+                          :last-getter (fn [state] [[(:last-move state) 
+                                                     (keyword->color (enemy (:player state))) 
+                                                     (keyword->color :red)]])}])

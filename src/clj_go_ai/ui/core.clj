@@ -2,6 +2,8 @@
   (:import [javax.swing JPanel JFrame]
            [java.awt Graphics Color]))
 
+(def keyword->color {:black Color/BLACK :white Color/WHITE :red Color/RED})
+
 (defn get-coords 
   "Get the display coordinates for the board coordinates.
    [0 0] is the top left and [0 19] the bottom left."
@@ -10,22 +12,22 @@
 
 (defn get-circle-params 
   "Gets the point and the radius."
-  [board-coords offset radius]
-  (concat (map #(- % radius) (get-coords board-coords)) [radius]))
+  [board-coords offset diameter]
+  (concat (map #(- % (/ diameter 2)) (get-coords board-coords offset)) [diameter]))
 
 (defn draw-stone
   "Draws a stone. Highlights with inner-col by rendering a smaller circle of half the
    radius." 
-  ([color board-coords offset graphics] (draw-stone board-coords offset graphics nil))
-  ([color board-coords offset graphics inner-col]
+  ([color board-coords offset graphics] (draw-stone color board-coords offset graphics color))
+  ([color board-coords offset #^Graphics graphics inner-col]
     (let [stone-rad (/ offset 2)
           [b-x b-y r] (get-circle-params board-coords offset stone-rad)]
+      (println (str "GRAPHICS:::" graphics))
       (. graphics setColor color)
-      (. graphics drawOval b-x b-y stone-rad stone-rad)
-      (if (not (nil? inner-col))
-        (let [[i-x iy i-r] (get-circle-params board-coords offset (/ stone-rad 2))]
-          (. graphics setColor inner-col)
-          (. graphics drawOval i-x i-y i-r i-r))))))
+      (. graphics fillOval b-x b-y stone-rad stone-rad)
+      (let [[i-x i-y i-r] (get-circle-params board-coords offset (/ stone-rad 2))]
+        (. graphics setColor inner-col)
+        (. graphics fillOval i-x i-y i-r i-r)))))
 
 (defn render-grid
   "Renders the grid for the game.
@@ -40,12 +42,12 @@
   (let [board-top 0]
     (. graphics setColor Color/BLACK)
     (dorun (map (fn [pt] (let [[x y r] (get-circle-params pt offset (/ offset 4))] 
-                           (. graphics drawOval x y r r))) 
+                           (. graphics fillOval x y r r))) 
                 star-points))
     (loop [curr-val 0]
       (if (< curr-val board-len)
         (let [[curr-coord top] (get-coords [curr-val board-top] offset)
-              bottom (* offset (inc board-len))] 
+              bottom (* offset board-len)] 
           (. graphics drawLine curr-coord top curr-coord bottom)
           (. graphics drawLine top curr-coord bottom curr-coord)
           (recur (inc curr-val))))))))
@@ -60,7 +62,7 @@
   (render-grid offset graphics)
   (dorun (map #(draw-stone Color/BLACK % offset graphics) (black-getter state)))
   (dorun (map #(draw-stone Color/WHITE % offset graphics) (white-getter state)))
-  (dorun (map #(draw-stone (second %) (first %) offset graphics (nth 2 %)) (last-getter state))))
+  (dorun (map #(draw-stone (second %) (first %) offset graphics (nth % 2)) (last-getter state))))
 
 (defn make-ui 
   "Makes a UI. The configurations must be passed in.
@@ -107,7 +109,7 @@
                  :last-getter last-getter}
         panel (proxy [JPanel] []
                 (paintComponent [#^Graphics graphics]
-                  (draw-state offset graphics (:state @state) getters)))
+                  (draw-state offset graphics @state getters)))
         frame (doto (JFrame. "Go Test!")
                 (.setSize dim dim)
                 (.add panel)
@@ -131,7 +133,7 @@
      :frame frame
      :turn #(whose-turn @state)
      :try-to-resign-or-pass (fn [color pass-or-resign]
-                              (if (and (not (is-end-game @state)) (= color (whose-color @state)))
+                              (if (and (not (is-end-game @state)) (= color (whose-turn @state)))
                                 (if (= pass-or-resign :pass)
                                   (dosync (ref-set (pass @state color)))
                                   (dosync (ref-set (resign @state color))))
